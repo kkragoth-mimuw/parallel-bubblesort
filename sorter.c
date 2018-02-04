@@ -12,24 +12,7 @@
 #include <fcntl.h>           /* For O_* constants */
 
 #include "err.h"
-
-#define MAX_N  100
-#define BUF_SIZE 100
-
-#define SHM_NAME "/pszbubble_sort"
-#define ARR_MUTEX_PREFIX "/array_position_"
-#define GO_SIGNAL_REFPIX "/go_signal_"
-#define SORT_FLAG_MUTEX "/flag_mutex"
-#define WORKING_MUTEX "/working_mutex"
-#define END_MUTEX "/end_mutex"
-#define SEM_EVEN "/sem_even"
-#define SEM_ODD "/sem_odd"
-
-// no need to use struct
-#define SORT_FLAG_POSITION (2*N)
-#define WORKING_POSITION   ((2*N)+1)
-#define SORT_FLAG          mapped_mem[SORT_FLAG_POSITION]
-#define WORKING            mapped_mem[WORKING_POSITION]
+#include "protocol.h"
 
 int main() {
     sem_t* sem_go_signal_index[MAX_N];
@@ -47,12 +30,12 @@ int main() {
     if (fd_memory == -1)
         syserr("shm_open");
 
-    if (ftruncate(fd_memory, (2*N + 2) * sizeof(int)) == -1)
+    if (ftruncate(fd_memory, (2*N + 3) * sizeof(int)) == -1)
         syserr("truncate");
 
     prot = PROT_READ | PROT_WRITE;
     flags = MAP_SHARED;
-    mapped_mem = (int *) mmap(NULL, (2*N + 2) * sizeof(int), prot, flags, fd_memory, 0);
+    mapped_mem = (int *) mmap(NULL, (2*N + 3) * sizeof(int), prot, flags, fd_memory, 0);
     if (mapped_mem == MAP_FAILED)
         syserr("mmap");
 
@@ -96,9 +79,9 @@ int main() {
         syserr("sem_sort_flag failed");
 
 
-    for (int i = 0; i < 2*N; i++) {
+    for (int i = 1; i < 2*N; i += 2) {
         memset(buffer, 0, BUF_SIZE);
-        sprintf(buffer, "%s%d", ARR_MUTEX_PREFIX, i);
+        sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, i);
         sem_array_position_index[i] = sem_open(buffer, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
         if (sem_array_position_index[i] == SEM_FAILED)
             syserr("sem_end failed");
@@ -134,6 +117,8 @@ int main() {
         sprintf(buffer, "%s%d", ARR_MUTEX_PREFIX, i);
         sem_close(sem_array_position_index[i]);
         sem_unlink(buffer);
+
+        if (wait(0) == -1) syserr("error in wait");
     }
 
     sem_close(sem_end);
