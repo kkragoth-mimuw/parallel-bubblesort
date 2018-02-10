@@ -51,7 +51,6 @@ void cleanup() {
 
 void siginit_handler(int sig) {
     cleanup();
-    kill(0, SIGINT);
 }
 
 int main() {
