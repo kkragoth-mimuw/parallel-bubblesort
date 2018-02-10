@@ -15,16 +15,59 @@
 #include "err.h"
 #include "protocol.h"
 
+int N = 0;
+int *mapped_mem;
+int fd_memory = -1;
+sem_t* sem_go_signal[MAX_N];
+
+sem_t *sem_end_of_iteration;
+sem_t *sem_sort_flag;
+sem_t *sem_end_flag;
+sem_t *sem_working_mutex;
+
+char buffer[BUF_SIZE] = { 0 };
+char buffer2[BUF_SIZE] = { 0 };
+char buffer3[BUF_SIZE] = { 0 };
+
+void cleanup() {
+    sem_close(sem_end_of_iteration);
+    sem_unlink(SEM_END_OF_ITERATION);
+    sem_close(sem_sort_flag);
+    sem_unlink(SORT_FLAG_MUTEX);
+    sem_close(sem_end_flag);
+    sem_unlink(END_FLAG_MUTEX);
+    sem_close(sem_working_mutex);
+    sem_unlink(WORKING_MUTEX);
+
+    for (int i = 0; i < ((2*N)-1); i++) {
+        sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, i);
+        sem_close(sem_go_signal[i]);
+        sem_unlink(buffer);
+    }
+
+    close(fd_memory);
+    shm_unlink(SHM_NAME);
+}
+
+void siginit_handler(int sig) {
+    cleanup();
+    kill(0, SIGINT);
+}
+
 int main() {
-    sem_t* sem_go_signal_index[MAX_N];
-    sem_t* sem_array_position_index[MAX_N];
-    char buffer[BUF_SIZE] = { 0 };
-    char buffer2[BUF_SIZE] = { 0 };
-    int *mapped_mem;
-    int fd_memory = -1;
+    struct sigaction action;
+    sigset_t block_mask;
+
+    sigemptyset (&block_mask);
+    action.sa_handler = siginit_handler;
+    action.sa_mask = block_mask;
+    action.sa_flags = 0;
+
+    if (sigaction (SIGINT, &action, 0) == -1)
+        syserr("sigaction");
+
     int flags, prot;
 
-    int N;
     scanf("%d", &N);
 
     fd_memory = shm_open(SHM_NAME, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
@@ -44,25 +87,21 @@ int main() {
         scanf("%d", &(mapped_mem[i]));
     }
 
-    sem_t *sem_end_of_iteration;
     sem_end_of_iteration = sem_open(SEM_END_OF_ITERATION, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 0);
     if (sem_end_of_iteration == SEM_FAILED)
         syserr("sem_end failed");
 
     SORT_FLAG = 1;
-    sem_t *sem_sort_flag;
     sem_sort_flag = sem_open(SORT_FLAG_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
     if (sem_sort_flag == SEM_FAILED)
         syserr("sem_sort_flag failed");
 
     END_FLAG = 0;
-    sem_t *sem_end_flag;
     sem_end_flag = sem_open(END_FLAG_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
     if (sem_end_flag == SEM_FAILED)
         syserr("sem_end_flag failed");
 
     WORKING = N - 1;
-    sem_t *sem_working_mutex;
     sem_working_mutex = sem_open(WORKING_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
     if (sem_working_mutex == SEM_FAILED)
         syserr("sem_working_mutex failed");
@@ -83,8 +122,8 @@ int main() {
         else {
             how_much_open = 0;
         }
-        sem_array_position_index[i] = sem_open(buffer, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, how_much_open);
-        if (sem_array_position_index[i] == SEM_FAILED)
+        sem_go_signal[i] = sem_open(buffer, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, how_much_open);
+        if (sem_go_signal[i] == SEM_FAILED)
             syserr("sem_go_signal failed");
     }
 
@@ -96,6 +135,8 @@ int main() {
 
         switch(fork()) {
             case -1:
+                cleanup();
+                kill(0, SIGINT);
                 syserr("fork");
             case 0:
                 execl("./A", "A", buffer, buffer2, NULL);
@@ -115,10 +156,10 @@ int main() {
 
         for (int i = 0; i < (2*N) - 1; i += 2) {
             if (i != 0 && i < (2*N) -2) {
-                if (sem_post(sem_array_position_index[i]))
+                if (sem_post(sem_go_signal[i]))
                     syserr("sem post");
             }
-            if (sem_post(sem_array_position_index[i]))
+            if (sem_post(sem_go_signal[i]))
                 syserr("sem post");
         }
     }
@@ -128,22 +169,8 @@ int main() {
     }
 
     for (int i = 0; i < ((2*N)-1); i++) {
-        sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, i);
-        sem_close(sem_array_position_index[i]);
-        sem_unlink(buffer);
-
         if (wait(0) == -1) syserr("error in wait");
     }
 
-    sem_close(sem_end_of_iteration);
-    sem_unlink(SEM_END_OF_ITERATION);
-    sem_close(sem_sort_flag);
-    sem_unlink(SORT_FLAG_MUTEX);
-    sem_close(sem_end_flag);
-    sem_unlink(END_FLAG_MUTEX);
-    sem_close(sem_working_mutex);
-    sem_unlink(WORKING_MUTEX);
-
-    close(fd_memory);
-    shm_unlink(SHM_NAME);
+    cleanup();
 }

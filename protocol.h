@@ -2,7 +2,7 @@
 #define PROTOCOL_PSZ
 
 
-#define MAX_N  1000
+#define MAX_N  2000
 #define BUF_SIZE 100
 
 #define SHM_NAME "/pszbubble_sort"
