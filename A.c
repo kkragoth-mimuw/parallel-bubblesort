@@ -16,12 +16,17 @@
 #include "err.h"
 
 int main(int argc, char *argv[]) {
+    pid_t parent_pid = 0;
     char buffer[BUF_SIZE] = { 0 };
     memset(buffer, 0, BUF_SIZE);
 
-    if (argc != 3) {
+    if (argc < 3) {
         printf("pass index, N as arguments");
         exit(1);
+    }
+
+    if (argc == 4) {
+        parent_pid = atoi(argv[3]);
     }
 
     int index = atoi(argv[1]);
@@ -31,73 +36,101 @@ int main(int argc, char *argv[]) {
     int fd_memory = -1;
     int flags, prot;
 
+    if (true) {
+        if (parent_pid != 0) {
+        }
+    }
     fd_memory = shm_open(SHM_NAME, O_RDWR, S_IRUSR | S_IWUSR);
-    if (fd_memory == -1)
-        syserr("shm_open");
+    if (fd_memory == -1) {
+            if (parent_pid != 0) kill(parent_pid, SIGUSR1);
+            syserr("shm_open");
+    }
 
     prot = PROT_READ | PROT_WRITE;
     flags = MAP_SHARED;
     mapped_mem = (int *) mmap(NULL, (2*N + ADDITIONAL_INFO) * sizeof(int), prot, flags, fd_memory, 0);
-    if (mapped_mem == MAP_FAILED)
+    if (mapped_mem == MAP_FAILED) {
+        if (parent_pid != 0) kill(parent_pid, SIGUSR1);
         syserr("mmap");
+    }
 
     sem_t *sem_my_go_signal, *sem_prev_go_signal, *sem_next_go_signal;
     sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, index);
     sem_my_go_signal = sem_open(buffer, O_RDWR, S_IRUSR | S_IWUSR, 0);
-    if (sem_my_go_signal == SEM_FAILED)
+    if (sem_my_go_signal == SEM_FAILED) {
+        if (parent_pid != 0) kill(parent_pid, SIGUSR1);
         syserr("sem_my_go_signal open");
+    }
 
     if (index != ((2*N) - 2)) {
         sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, index + 1);
         sem_next_go_signal = sem_open(buffer, O_RDWR, S_IRUSR | S_IWUSR, 0);
-        if (sem_next_go_signal == SEM_FAILED)
+        if (sem_next_go_signal == SEM_FAILED) {
+            if (parent_pid != 0) kill(parent_pid, SIGUSR1);
             syserr("sem_next_go_signal open");
+        }
     }
 
     if (index != 0) {
         sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, index-1);
         sem_prev_go_signal = sem_open(buffer, O_RDWR, S_IRUSR | S_IWUSR, 0);
-        if (sem_prev_go_signal == SEM_FAILED)
+        if (sem_prev_go_signal == SEM_FAILED) {
+            if (parent_pid != 0) kill(parent_pid, SIGUSR1);
             syserr("sem_prev_go_signal open");
         }
+    }
 
     sem_t *sem_sort_flag;
     sem_sort_flag = sem_open(SORT_FLAG_MUTEX, O_RDWR, S_IRUSR | S_IWUSR, 1);
-    if (sem_sort_flag == SEM_FAILED)
+    if (sem_sort_flag == SEM_FAILED) {
+        if (parent_pid != 0) kill(parent_pid, SIGUSR1);
         syserr("sem_sort_flag open");
+    }
 
     sem_t *sem_end_flag;
     sem_end_flag = sem_open(END_FLAG_MUTEX, O_RDWR, S_IRUSR | S_IWUSR, 1);
-    if (sem_end_flag == SEM_FAILED)
+    if (sem_end_flag == SEM_FAILED) {
+        if (parent_pid != 0) kill(parent_pid, SIGUSR1);
         syserr("sem_end_flag open");
+    }
 
     sem_t *sem_working_mutex;
     sem_working_mutex = sem_open(WORKING_MUTEX, O_RDWR, S_IRUSR | S_IWUSR, 1);
-    if (sem_working_mutex == SEM_FAILED)
+    if (sem_working_mutex == SEM_FAILED) {
+        if (parent_pid != 0) kill(parent_pid, SIGUSR1);
         syserr("sem_working_mutex open");
+    }
 
     sem_t *sem_end_of_iteration;
     sem_end_of_iteration = sem_open(SEM_END_OF_ITERATION, O_RDWR, S_IRUSR | S_IWUSR, 0);
-    if (sem_end_of_iteration == SEM_FAILED)
+    if (sem_end_of_iteration == SEM_FAILED) {
+        if (parent_pid != 0) kill(parent_pid, SIGUSR1);
         syserr("sem_end open");
-
+    }
 
     bool working = true;
     while (working) {
         if (index != 0 && index != (2*N) -2) {
-            if (sem_wait(sem_my_go_signal))
+            if (sem_wait(sem_my_go_signal)) {
+                if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                 syserr("waiting for my go signal");
+            }
         }
 
-        if (sem_wait(sem_my_go_signal))
+        if (sem_wait(sem_my_go_signal)) {
+            if (parent_pid != 0) kill(parent_pid, SIGUSR1);
             syserr("waiting for my go signal");
+        }
 
         if (sem_wait(sem_end_flag)) {
+            if (parent_pid != 0) kill(parent_pid, SIGUSR1);
             syserr("sem end flag wait");
         }
+
         working = (END_FLAG != 1);
 
         if (sem_post(sem_end_flag)) {
+            if (parent_pid != 0) kill(parent_pid, SIGUSR1);
             syserr("sem end post");
         }
 
@@ -106,27 +139,36 @@ int main(int argc, char *argv[]) {
             mapped_mem[index] = mapped_mem[index + 1];
             mapped_mem[index + 1] = tmp;
 
-            if (sem_wait(sem_sort_flag))
+            if (sem_wait(sem_sort_flag)) {
+                if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                 syserr("sem sort flag");
+            }
 
             SORT_FLAG = 0;
 
-            if (sem_post(sem_sort_flag))
+            if (sem_post(sem_sort_flag)) {
+                if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                 syserr("sem post sort flag");
+            }
         }
 
         if ((index % 2) == 0) { // Process A
             if (index > 0) {
-                if (sem_post(sem_prev_go_signal))
+                if (sem_post(sem_prev_go_signal)) {
+                    if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                     syserr("sem prev");
+                }
             }
             if (index < ((2*N) - 2)) {
-                if (sem_post(sem_next_go_signal))
+                if (sem_post(sem_next_go_signal)) {
+                    if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                     syserr("sem next");
+                }
             }
         }
         else if (working) { // Process B
             if (sem_wait(sem_working_mutex)) {
+                if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                 syserr("sem_working_mutex");
             }
 
@@ -134,17 +176,20 @@ int main(int argc, char *argv[]) {
 
             if (WORKING == 0) {
                 if (sem_wait(sem_sort_flag)) {
+                    if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                     syserr("sort flag wait");
                 }
 
                 if (SORT_FLAG == 1) {
                     if (sem_wait(sem_end_flag)) {
+                        if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                         syserr("sem end flag mutex");
                     }
 
                     END_FLAG = 1;
 
                     if (sem_post(sem_end_flag)) {
+                        if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                         syserr("sem end post");
                     }
                 }
@@ -154,15 +199,18 @@ int main(int argc, char *argv[]) {
                 }
 
                 if (sem_post(sem_sort_flag)) {
+                    if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                     syserr("sort flag post");
                 }
 
                 if (sem_post(sem_end_of_iteration)) {
+                    if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                     syserr("sem_end post");
                 }
             }
 
             if (sem_post(sem_working_mutex)) {
+                if (parent_pid != 0) kill(parent_pid, SIGUSR1);
                 syserr("sem_working post");
             }
         }

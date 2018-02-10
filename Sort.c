@@ -47,12 +47,17 @@ void cleanup() {
 
     close(fd_memory);
     shm_unlink(SHM_NAME);
-
-    exit(0);
 }
 
 void siginit_handler(int sig) {
     cleanup();
+    if (sig == SIGINT) {
+        exit(0);
+    }
+    else {
+        printf("got signal");
+        kill(0, SIGINT);
+    }
 }
 
 int main() {
@@ -63,6 +68,9 @@ int main() {
     action.sa_handler = siginit_handler;
     action.sa_mask = block_mask;
     action.sa_flags = 0;
+
+    if (sigaction (SIGUSR1, &action, 0) == -1)
+        syserr("sigaction");
 
     if (sigaction (SIGINT, &action, 0) == -1)
         syserr("sigaction");
@@ -129,8 +137,6 @@ int main() {
     }
 
     for (int i = 0; i < (2*N) - 1; i++) {
-        memset(buffer, 0, BUF_SIZE);
-        memset(buffer2, 0, BUF_SIZE);
         sprintf(buffer, "%d", i);
         sprintf(buffer2, "%d", N);
         sprintf(buffer3, "%d", (int)getpid());
@@ -140,7 +146,7 @@ int main() {
                 printf("Error in fork; probably trying to create over limit; killing children and terminating\n");
                 kill(0, SIGINT);
             case 0:
-                execl("./A", "A", buffer, buffer2, NULL);
+                execl("./A", "A", buffer, buffer2, buffer3, NULL);
                 syserr("execl");
             default:
                 break;
@@ -150,6 +156,7 @@ int main() {
     bool new_iteration_needed = true;
     while (new_iteration_needed) {
         if (sem_wait(sem_end_of_iteration)) {
+            kill(0, SIGINT);
             syserr("sem_end wait");
         }
 
@@ -157,11 +164,15 @@ int main() {
 
         for (int i = 0; i < (2*N) - 1; i += 2) {
             if (i != 0 && i < (2*N) -2) {
-                if (sem_post(sem_go_signal[i]))
+                if (sem_post(sem_go_signal[i])) {
+                    kill(0, SIGINT);
                     syserr("sem post");
+                }
             }
-            if (sem_post(sem_go_signal[i]))
+            if (sem_post(sem_go_signal[i])) {
+                kill(0, SIGINT);
                 syserr("sem post");
+            }
         }
     }
 
