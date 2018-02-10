@@ -47,6 +47,8 @@ void cleanup() {
 
     close(fd_memory);
     shm_unlink(SHM_NAME);
+
+    exit(0);
 }
 
 void siginit_handler(int sig) {
@@ -131,11 +133,12 @@ int main() {
         memset(buffer2, 0, BUF_SIZE);
         sprintf(buffer, "%d", i);
         sprintf(buffer2, "%d", N);
+        sprintf(buffer3, "%d", (int)getpid());
 
         switch(fork()) {
             case -1:
+                printf("Error in fork; probably trying to create over limit; killing children and terminating\n");
                 kill(0, SIGINT);
-                syserr("ERROR IN FORK; (PROBABLY TRYING TO CREATE OVER LIMIT); KILLING CHILDREN AND TERMINATING");
             case 0:
                 execl("./A", "A", buffer, buffer2, NULL);
                 syserr("execl");
