@@ -6,6 +6,7 @@
 #include <semaphore.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>        /* For mode constants */
@@ -30,12 +31,12 @@ int main() {
     if (fd_memory == -1)
         syserr("shm_open");
 
-    if (ftruncate(fd_memory, (2*N + 3) * sizeof(int)) == -1)
+    if (ftruncate(fd_memory, (2*N + ADDITIONAL_INFO) * sizeof(int)) == -1)
         syserr("truncate");
 
     prot = PROT_READ | PROT_WRITE;
     flags = MAP_SHARED;
-    mapped_mem = (int *) mmap(NULL, (2*N + 3) * sizeof(int), prot, flags, fd_memory, 0);
+    mapped_mem = (int *) mmap(NULL, (2*N + ADDITIONAL_INFO) * sizeof(int), prot, flags, fd_memory, 0);
     if (mapped_mem == MAP_FAILED)
         syserr("mmap");
 
@@ -43,9 +44,9 @@ int main() {
         scanf("%d", &(mapped_mem[i]));
     }
 
-    sem_t *sem_end;
-    sem_end = sem_open(END_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 0);
-    if (sem_end == SEM_FAILED)
+    sem_t *sem_end_of_iteration;
+    sem_end_of_iteration = sem_open(SEM_END_OF_ITERATION, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 0);
+    if (sem_end_of_iteration == SEM_FAILED)
         syserr("sem_end failed");
 
     SORT_FLAG = 1;
@@ -58,36 +59,33 @@ int main() {
     sem_t *sem_end_flag;
     sem_end_flag = sem_open(END_FLAG_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
     if (sem_end_flag == SEM_FAILED)
-        syserr("sem_sort_flag failed");
-
-    sem_t *sem_even_phase;
-    sem_even_phase = sem_open(SEM_EVEN, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
-    if (sem_even_phase == SEM_FAILED)
-        syserr("sem_sort_flag failed");
-
-    sem_t *sem_odd_phase;
-    sem_odd_phase = sem_open(SEM_ODD, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
-    if (sem_odd_phase == SEM_FAILED)
-        syserr("sem_sort_flag failed");
+        syserr("sem_end_flag failed");
 
     WORKING = N - 1;
     sem_t *sem_working_mutex;
     sem_working_mutex = sem_open(WORKING_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
     if (sem_working_mutex == SEM_FAILED)
-        syserr("sem_working failed");
-
-    sem_t *sem_new_iteration;
-    sem_new_iteration = sem_open(SEM_NEW_ITERATION, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, N);
-    if (sem_new_iteration == SEM_FAILED)
-        syserr("sem_sort_flag failed");
+        syserr("sem_working_mutex failed");
 
 
-    for (int i = 1; i < N - 1; i++) {
+    for (int i = 0; i < (2 * N) - 1; i++) {
         memset(buffer, 0, BUF_SIZE);
-        sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, (i/2) + 1 );
-        sem_array_position_index[i] = sem_open(buffer, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 0);
+        sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, i);
+        int how_much_open;
+        if ((i % 2 == 0)) {
+            if ((i != 0) && (i != ((2*N) - 2))) {
+                how_much_open = 2;
+            }
+            else {
+                how_much_open = 1;
+            }
+        }
+        else {
+            how_much_open = 0;
+        }
+        sem_array_position_index[i] = sem_open(buffer, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, how_much_open);
         if (sem_array_position_index[i] == SEM_FAILED)
-            syserr("sem_end failed");
+            syserr("sem_go_signal failed");
     }
 
     for (int i = 0; i < (2*N) - 1; i++) {
@@ -107,27 +105,44 @@ int main() {
         }
     }
 
-    if (sem_wait(sem_end)) {
-        syserr("sem_end wait");
+    bool new_iteration_needed = true;
+    while (new_iteration_needed) {
+        if (sem_wait(sem_end_of_iteration)) {
+            syserr("sem_end wait");
+        }
+
+        new_iteration_needed = (END_FLAG != 1);
+
+        for (int i = 0; i < (2*N) - 1; i += 2) {
+            if (i != 0 && i < (2*N) -2) {
+                if (sem_post(sem_array_position_index[i]))
+                    syserr("sem post");
+            }
+            if (sem_post(sem_array_position_index[i]))
+                syserr("sem post");
+        }
     }
 
     for (int i = 0; i < 2*N; i++) {
-        printf("%d", mapped_mem[i]);
+        printf("%d\n", mapped_mem[i]);
     }
 
-    for (int i = 0; i < 2*N; i++) {
-        memset(buffer, 0, BUF_SIZE);
-        sprintf(buffer, "%s%d", ARR_MUTEX_PREFIX, i);
+    for (int i = 0; i < ((2*N)-1); i++) {
+        sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, i);
         sem_close(sem_array_position_index[i]);
         sem_unlink(buffer);
 
         if (wait(0) == -1) syserr("error in wait");
     }
 
-    sem_close(sem_end);
-    sem_unlink(END_MUTEX);
+    sem_close(sem_end_of_iteration);
+    sem_unlink(SEM_END_OF_ITERATION);
     sem_close(sem_sort_flag);
     sem_unlink(SORT_FLAG_MUTEX);
+    sem_close(sem_end_flag);
+    sem_unlink(END_FLAG_MUTEX);
+    sem_close(sem_working_mutex);
+    sem_unlink(WORKING_MUTEX);
 
     close(fd_memory);
     shm_unlink(SHM_NAME);

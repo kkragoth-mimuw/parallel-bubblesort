@@ -37,70 +37,63 @@ int main(int argc, char *argv[]) {
 
     prot = PROT_READ | PROT_WRITE;
     flags = MAP_SHARED;
-    mapped_mem = (int *) mmap(NULL, (2*N + 2) * sizeof(int), prot, flags, fd_memory, 0);
+    mapped_mem = (int *) mmap(NULL, (2*N + ADDITIONAL_INFO) * sizeof(int), prot, flags, fd_memory, 0);
     if (mapped_mem == MAP_FAILED)
         syserr("mmap");
 
     sem_t *sem_my_go_signal, *sem_prev_go_signal, *sem_next_go_signal;
-    if ((index % 2) == 0) { // Process A
+    sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, index);
+    sem_my_go_signal = sem_open(buffer, O_RDWR, S_IRUSR | S_IWUSR, 0);
+    if (sem_my_go_signal == SEM_FAILED)
+        syserr("sem_my_go_signal open");
+
+    if (index != ((2*N) - 2)) {
         sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, index + 1);
         sem_next_go_signal = sem_open(buffer, O_RDWR, S_IRUSR | S_IWUSR, 0);
         if (sem_next_go_signal == SEM_FAILED)
-            syserr("sem_sort_flag failed");
+            syserr("sem_next_go_signal open");
+    }
 
+    if (index != 0) {
         sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, index-1);
         sem_prev_go_signal = sem_open(buffer, O_RDWR, S_IRUSR | S_IWUSR, 0);
         if (sem_prev_go_signal == SEM_FAILED)
-            syserr("sem_sort_flag failed");
-    }
-    else { // Process B
-         sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, index);
-        sem_my_go_signal = sem_open(buffer, O_RDWR, S_IRUSR | S_IWUSR, 0);
-        if (sem_my_go_signal == SEM_FAILED)
-            syserr("sem_sort_flag failed");
-    }
+            syserr("sem_prev_go_signal open");
+        }
 
     sem_t *sem_sort_flag;
     sem_sort_flag = sem_open(SORT_FLAG_MUTEX, O_RDWR, S_IRUSR | S_IWUSR, 1);
     if (sem_sort_flag == SEM_FAILED)
-        syserr("sem_sort_flag failed");
+        syserr("sem_sort_flag open");
 
     sem_t *sem_end_flag;
     sem_end_flag = sem_open(END_FLAG_MUTEX, O_RDWR, S_IRUSR | S_IWUSR, 1);
     if (sem_end_flag == SEM_FAILED)
-        syserr("sem_sort_flag failed");
+        syserr("sem_end_flag open");
 
     sem_t *sem_working_mutex;
     sem_working_mutex = sem_open(WORKING_MUTEX, O_RDWR, S_IRUSR | S_IWUSR, 1);
     if (sem_working_mutex == SEM_FAILED)
-        syserr("sem_working failed");
+        syserr("sem_working_mutex open");
 
-    sem_t *sem_new_iteration;
-    sem_new_iteration = sem_open(SEM_NEW_ITERATION, O_RDWR, S_IRUSR | S_IWUSR, N);
-    if (sem_new_iteration == SEM_FAILED)
-        syserr("sem_sort_flag failed");
-
-    sem_t *sem_end;
-    sem_end = sem_open(END_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 0);
-    if (sem_end == SEM_FAILED)
-        syserr("sem_end failed");
+    sem_t *sem_end_of_iteration;
+    sem_end_of_iteration = sem_open(SEM_END_OF_ITERATION, O_RDWR, S_IRUSR | S_IWUSR, 0);
+    if (sem_end_of_iteration == SEM_FAILED)
+        syserr("sem_end open");
 
 
     bool working = true;
     while (working) {
-        if ((index % 2) == 0) { // Process A
-            if (sem_wait(sem_new_iteration))
-                syserr("sem new iteration");
-        }
-        else  { // Process B
-            for (int i = 0; i < 2; i++) {
-                if (sem_wait(sem_my_go_signal))
-                    syserr("waiting for go signal");
-            }
+        if (index != 0 && index != (2*N) -2) {
+            if (sem_wait(sem_my_go_signal))
+                syserr("waiting for my go signal");
         }
 
+        if (sem_wait(sem_my_go_signal))
+            syserr("waiting for my go signal");
+
         if (sem_wait(sem_end_flag)) {
-            syserr("sem end flag mutex");
+            syserr("sem end flag wait");
         }
         working = (END_FLAG != 1);
 
@@ -123,10 +116,14 @@ int main(int argc, char *argv[]) {
         }
 
         if ((index % 2) == 0) { // Process A
-            if (sem_post(sem_prev_go_signal))
-                syserr("sem prev");
-            if (sem_post(sem_next_go_signal))
-                syserr("sem next");
+            if (index > 0) {
+                if (sem_post(sem_prev_go_signal))
+                    syserr("sem prev");
+            }
+            if (index < ((2*N) - 2)) {
+                if (sem_post(sem_next_go_signal))
+                    syserr("sem next");
+            }
         }
         else if (working) { // Process B
             if (sem_wait(sem_working_mutex)) {
@@ -160,10 +157,8 @@ int main(int argc, char *argv[]) {
                     syserr("sort flag post");
                 }
 
-                for (int i = 0; i < N; i++) {
-                    if (sem_post(sem_new_iteration)) {
-                        syserr("sem new iteration post");
-                    }
+                if (sem_post(sem_end_of_iteration)) {
+                    syserr("sem_end post");
                 }
             }
 
@@ -173,11 +168,18 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    sem_close(sem_end);
-    sem_unlink(END_MUTEX);
+    sem_close(sem_my_go_signal);
+
+    if (index != ((2*N) - 2)) {
+        sem_close(sem_next_go_signal);
+    }
+    if (index != 0) {
+        sem_close(sem_prev_go_signal);
+    }
+    sem_close(sem_end_of_iteration);
     sem_close(sem_sort_flag);
-    sem_unlink(SORT_FLAG_MUTEX);
+    sem_close(sem_end_flag);
+    sem_close(sem_working_mutex);
 
     close(fd_memory);
-    shm_unlink(SHM_NAME);
 }
