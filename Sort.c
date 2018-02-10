@@ -134,9 +134,8 @@ int main() {
 
         switch(fork()) {
             case -1:
-                cleanup();
                 kill(0, SIGINT);
-                syserr("fork");
+                syserr("ERROR IN FORK; (PROBABLY TRYING TO CREATE OVER LIMIT); KILLING CHILDREN AND TERMINATING");
             case 0:
                 execl("./A", "A", buffer, buffer2, NULL);
                 syserr("execl");
