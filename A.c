@@ -36,10 +36,6 @@ int main(int argc, char *argv[]) {
     int fd_memory = -1;
     int flags, prot;
 
-    if (true) {
-        if (parent_pid != 0) {
-        }
-    }
     fd_memory = shm_open(SHM_NAME, O_RDWR, S_IRUSR | S_IWUSR);
     if (fd_memory == -1) {
             if (parent_pid != 0) kill(parent_pid, SIGUSR1);
