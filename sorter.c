@@ -54,13 +54,11 @@ int main() {
     if (sem_sort_flag == SEM_FAILED)
         syserr("sem_sort_flag failed");
 
-
-    WORKING = 2*N;
-     sem_t *sem_working_mutex;
-    sem_sort_flag = sem_open(WORKING_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
-    if (sem_sort_flag == SEM_FAILED)
+    END_FLAG = 0;
+    sem_t *sem_end_flag;
+    sem_end_flag = sem_open(END_FLAG_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
+    if (sem_end_flag == SEM_FAILED)
         syserr("sem_sort_flag failed");
-
 
     sem_t *sem_even_phase;
     sem_even_phase = sem_open(SEM_EVEN, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
@@ -72,22 +70,27 @@ int main() {
     if (sem_odd_phase == SEM_FAILED)
         syserr("sem_sort_flag failed");
 
-    WORKING = 2*N;
-     sem_t *sem_working_mutex;
-    sem_sort_flag = sem_open(WORKING_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
-    if (sem_sort_flag == SEM_FAILED)
+    WORKING = N - 1;
+    sem_t *sem_working_mutex;
+    sem_working_mutex = sem_open(WORKING_MUTEX, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
+    if (sem_working_mutex == SEM_FAILED)
+        syserr("sem_working failed");
+
+    sem_t *sem_new_iteration;
+    sem_new_iteration = sem_open(SEM_NEW_ITERATION, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, N);
+    if (sem_new_iteration == SEM_FAILED)
         syserr("sem_sort_flag failed");
 
 
-    for (int i = 1; i < 2*N; i += 2) {
+    for (int i = 1; i < N - 1; i++) {
         memset(buffer, 0, BUF_SIZE);
-        sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, i);
-        sem_array_position_index[i] = sem_open(buffer, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 1);
+        sprintf(buffer, "%s%d", GO_SIGNAL_PREFIX, (i/2) + 1 );
+        sem_array_position_index[i] = sem_open(buffer, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR, 0);
         if (sem_array_position_index[i] == SEM_FAILED)
             syserr("sem_end failed");
     }
 
-    for (int i = 0; i < 2*N; i++) {
+    for (int i = 0; i < (2*N) - 1; i++) {
         memset(buffer, 0, BUF_SIZE);
         memset(buffer2, 0, BUF_SIZE);
         sprintf(buffer, "%d", i);
